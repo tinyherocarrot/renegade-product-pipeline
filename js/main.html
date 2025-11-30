@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple File Combiner</title>
+    <!-- Tailwind CSS CDN for easy styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Font - Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <!-- Main Container -->
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl">
+        <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">File Combiner & Mapper</h1>
+        <p class="text-center text-gray-600 mb-8">
+            Upload one or more CSV or XLSX files to combine them. Then, select the columns you want to include in the final output.
+        </p>
+        <div class="text-center">
+            <label class="text-center" for="vendor">Choose a vendor:</label>
+            <select class="rounded-lg border-2 border-gray-300 bg-white p-1 mb-2" name="vendor" id="vendor">
+                <option value="nike">NIKE</option>
+                <option value="asics">ASICS</option>
+                <option value="On">ON RUNNING</option>
+            </select>
+        </div>
+
+        <!-- Status Message Box -->
+        <div id="status-message" class="hidden mb-4 p-3 rounded-lg text-sm text-center"></div>
+
+        <!-- File Upload Section -->
+        <div class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 mb-6">
+            <label for="file-input" class="cursor-pointer">
+                <div class="flex flex-col items-center">
+                    <svg class="w-12 h-12 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-4-4v0a4 4 0 014-4h4.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293h3.586a4 4 0 014 4v0a4 4 0 01-4 4h-10z"></path></svg>
+                    <span class="text-lg font-medium text-gray-600">Click or Drag & Drop Files</span>
+                    <span class="text-sm text-gray-400 mt-1">CSV and XLSX files only</span>
+                </div>
+            </label>
+            <input type="file" id="file-input" multiple class="hidden" accept=".csv, .xlsx">
+        </div>
+
+        <!-- Column Selection Section -->
+        <div id="column-selection-container" class="hidden">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Select Columns for Output</h2>
+            <div id="column-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6 max-h-64 overflow-y-auto p-2 rounded-lg border border-gray-200 bg-gray-50">
+                <!-- Column checkboxes will be dynamically inserted here -->
+            </div>
+            <button id="download-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-300 ease-in-out">
+                Download Combined CSV
+            </button>
+        </div>
+    </div>
+
+    <!-- Libraries to handle file parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.17.0/dist/xlsx.full.min.js"></script>
+
+    <script>
+        // Use a central state object to manage the application data
+        const state = {
+            allData: [], // Stores parsed data from all files
+            allHeaders: new Set(), // A set to store unique headers
+            filesProcessed: 0,
+            totalFiles: 0,
+        };
+
+        // DOM elements
+        const fileInput = document.getElementById('file-input');
+        const columnSelectionContainer = document.getElementById('column-selection-container');
+        const columnList = document.getElementById('column-list');
+        const downloadButton = document.getElementById('download-button');
+        const statusMessage = document.getElementById('status-message');
+
+        /**
+         * Displays a status message to the user.
+         * @param {string} message - The message to display.
+         * @param {string} type - The type of message ('success', 'error', 'info').
+         */
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.classList.remove('hidden', 'bg-green-100', 'text-green-700', 'bg-red-100', 'text-red-700', 'bg-blue-100', 'text-blue-700');
+            if (type === 'success') {
+                statusMessage.classList.add('bg-green-100', 'text-green-700');
+            } else if (type === 'error') {
+                statusMessage.classList.add('bg-red-100', 'text-red-700');
+            } else {
+                statusMessage.classList.add('bg-blue-100', 'text-blue-700');
+            }
+        }
+
+        /**
+         * Renders the column selection UI based on the headers found in all files.
+         */
+        function renderColumnSelection() {
+            columnList.innerHTML = '';
+            state.allHeaders.forEach(header => {
+                const label = document.createElement('label');
+                label.className = 'flex items-center space-x-2 p-2 bg-white rounded-lg border border-gray-200 shadow-sm transition-all duration-200 hover:shadow-md cursor-pointer';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = true; // Columns are selected by default
+                checkbox.value = header;
+                checkbox.className = 'form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500';
+
+                const span = document.createElement('span');
+                span.textContent = header;
+                span.className = 'text-gray-700 text-sm font-medium truncate';
+
+                label.appendChild(checkbox);
+                label.appendChild(span);
+                columnList.appendChild(label);
+            });
+            columnSelectionContainer.classList.remove('hidden');
+            downloadButton.disabled = false;
+        }
+
+        /**
+         * Parses a single CSV file and adds its data to the state.
+         * @param {File} file - The CSV file to parse.
+         */
+        function parseCsvFile(file) {
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    if (results.data.length > 0) {
+                        results.data.forEach(row => {
+                            state.allData.push(row);
+                        });
+                        Object.keys(results.data[0]).forEach(header => {
+                            state.allHeaders.add(header);
+                        });
+                        showStatus(`Successfully loaded '${file.name}'.`, 'success');
+                    }
+                    state.filesProcessed++;
+                    if (state.filesProcessed === state.totalFiles) {
+                        renderColumnSelection();
+                    }
+                },
+                error: (error) => {
+                    showStatus(`Error parsing '${file.name}': ${error.message}`, 'error');
+                    state.filesProcessed++;
+                    if (state.filesProcessed === state.totalFiles) {
+                        renderColumnSelection();
+                    }
+                }
+            });
+        }
+
+        /**
+         * Parses a single XLSX file and adds its data to the state.
+         * @param {File} file - The XLSX file to parse.
+         */
+        function parseXlsxFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0]; // Assuming first sheet
+                const worksheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                if (jsonData.length > 1) {
+                    const headers = jsonData[0];
+                    const rows = jsonData.slice(1);
+                    rows.forEach(row => {
+                        const newRow = {};
+                        headers.forEach((header, index) => {
+                            newRow[header] = row[index];
+                        });
+                        state.allData.push(newRow);
+                    });
+                    headers.forEach(header => {
+                        state.allHeaders.add(header);
+                    });
+                    showStatus(`Successfully loaded '${file.name}'.`, 'success');
+                }
+                state.filesProcessed++;
+                if (state.filesProcessed === state.totalFiles) {
+                    renderColumnSelection();
+                }
+            };
+            reader.onerror = (error) => {
+                showStatus(`Error reading '${file.name}': ${error}`, 'error');
+                state.filesProcessed++;
+                if (state.filesProcessed === state.totalFiles) {
+                    renderColumnSelection();
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        /**
+         * Handles the files selected by the user.
+         * @param {FileList} files - The list of files from the input.
+         */
+        function handleFiles(files) {
+            if (files.length === 0) return;
+
+            // Reset state
+            state.allData = [];
+            state.allHeaders.clear();
+            state.filesProcessed = 0;
+            state.totalFiles = files.length;
+            columnSelectionContainer.classList.add('hidden');
+            showStatus('Processing files...', 'info');
+
+            Array.from(files).forEach(file => {
+                const fileType = file.name.split('.').pop().toLowerCase();
+                if (fileType === 'csv') {
+                    parseCsvFile(file);
+                } else if (fileType === 'xlsx') {
+                    parseXlsxFile(file);
+                } else {
+                    showStatus(`Unsupported file type: '${file.name}'. Please upload CSV or XLSX files.`, 'error');
+                }
+            });
+        }
+
+        /**
+         * Processes the data based on selected columns and triggers the download.
+         */
+        function processAndDownload() {
+            const selectedCheckboxes = document.querySelectorAll('#column-list input[type="checkbox"]:checked');
+            const selectedHeaders = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+            
+            if (selectedHeaders.length === 0) {
+                showStatus('Please select at least one column to download.', 'error');
+                return;
+            }
+
+            const selectedVendor = document.getElementById("vendor").value;
+            
+            const mappedData = state.allData.map(row => {
+                const newRow = {
+                    "Handle": "",
+                    "Title": "",
+                    "Body (HTML)": "",
+                    "Vendor": selectedVendor, // grab selected vendor
+                    "Product Category": "",
+                    "Type": "",
+                    "Tags": "",
+                    "Published": "",
+                    "Option1 Name": "", // Color
+                    "Option1 Value": "",
+                    "Option2 Name": "", // Size
+                    "Option2 Value": "",
+                    "Option3 Name": "", // not used
+                    "Option3 Value": "",
+                    "Variant SKU": "",
+                    "Variant Grams": "",
+                    "Variant Inventory Tracker": "",
+                    "Variant Inventory Qty": "",
+                    "Variant Inventory Policy": "",
+                    "Variant Fulfillment Service": "",
+                    "Variant Price": "",
+                    "Variant Compare At Price": "",
+                    "Variant Requires Shipping": "",
+                    "Variant Taxable": "",
+                    "Variant Barcode": "",
+                    "Image Src": "",
+                    "Image Position": "",
+                    "Image Alt Text": "",
+                    "Gift Card": "",
+                    "SEO Title": "",
+                    "SEO Description": "",
+                    "Google Shopping / Google Product Category": "",
+                    "Google Shopping / Gender": "",
+                    "Google Shopping / Age Group": "",
+                    "Google Shopping / MPN": "",
+                    "Google Shopping / Condition": "",
+                    "Google Shopping / Custom Product": "",
+                    "Variant Image": "",
+                    "Variant Weight Unit": "",
+                    "Variant Tax Code": "",
+                    "Cost per item": "",
+                    "Included / United States": "",
+                    "Price / United States": "",
+                    "Compare At Price / United States": "",
+                    "Included / International": "",
+                    "Price / International": "",
+                    "Compare At Price / International": "",
+                    "Status": "Draft", // set as draft by default
+                }
+
+                // Map columns
+                selectedHeaders.forEach(header => {
+                    // Check if the header exists in the current row. Use a default value if not.
+                    newRow[header] = row[header] !== undefined ? row[header] : '';
+                });
+                return newRow;
+            });
+
+            // Convert the final data to a CSV string using PapaParse
+            const csv = Papa.unparse(mappedData);
+
+            // Create a Blob and a downloadable link
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'combined_data.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            showStatus('Your combined CSV file is being downloaded!', 'success');
+        }
+
+        // Add event listeners
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        downloadButton.addEventListener('click', processAndDownload);
+
+        // Handle drag and drop for a better user experience
+        const dropArea = document.querySelector('.flex.flex-col.items-center.justify-center');
+        
+        dropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropArea.classList.add('border-blue-500');
+        });
+
+        dropArea.addEventListener('dragleave', () => {
+            dropArea.classList.remove('border-blue-500');
+        });
+
+        dropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropArea.classList.remove('border-blue-500');
+            const files = e.dataTransfer.files;
+            handleFiles(files);
+        });
+    </script>
+
+</body>
+</html>
